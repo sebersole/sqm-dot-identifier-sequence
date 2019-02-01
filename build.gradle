@@ -1,0 +1,139 @@
+plugins {
+    id 'java'
+}
+
+apply plugin: Antlr4Plugin
+
+group 'org.hibernate.poc.sebersole.sqm'
+version '1.0.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    antlr 'org.antlr:antlr4:4.7.1'
+
+    compile 'org.antlr:antlr4:4.7.1'
+    compile 'org.jboss.logging:jboss-logging:3.3.2.Final'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.4.0-RC2'
+    testCompile 'org.hamcrest:hamcrest-core:1.3'
+
+    testRuntime 'log4j:log4j:1.2.17'
+}
+
+ext {
+    baseAntlrInputPath = 'src/main/antlr'
+    baseAntlrOutputPath = 'generated-src/antlr/main'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+task compile
+compile.dependsOn compileJava, compileTestJava, processResources, processTestResources
+
+class GrammarDescriptor {
+    String packageName
+    String grammarName
+
+    GrammarDescriptor(String packageName, String grammarName) {
+        this.packageName = packageName
+        this.grammarName = grammarName
+    }
+
+    File resolveSourceFile(Project project) {
+        return project.file(
+                project.baseAntlrInputPath +
+                        '/' + packageName.replace( '.', '/' ) +
+                        '/' + grammarName + '.g4'
+        )
+    }
+
+    File resolveOutputFile(Project project) {
+        final File baseOutputDir = project.file( "${project.buildDir}/${project.baseAntlrOutputPath}/" )
+        final File packagedOutputDirectory = new File( baseOutputDir, packageName.replace( '.', '/' ) )
+
+        return new File( packagedOutputDirectory, grammarName + '.g4' )
+    }
+}
+
+class Antlr4Plugin implements Plugin<Project> {
+    void apply(Project project) {
+        project.with {
+            apply plugin : 'java'
+
+            configurations.maybeCreate 'antlr'
+
+            Antlr4GenerationTask genTask = tasks.create 'antlr', Antlr4GenerationTask
+            genTask.group = 'Build'
+            genTask.description = 'Generate source code from ANTLR grammar'
+
+            tasks.getByName('compileJava').dependsOn genTask
+
+            SourceSet mainSourceSet = project.convention.getPlugin( JavaPluginConvention ).sourceSets.getByName( SourceSet.MAIN_SOURCE_SET_NAME );
+            mainSourceSet.compileClasspath += configurations.antlr
+
+            SourceSet testSourceSet = project.convention.getPlugin( JavaPluginConvention ).sourceSets.getByName( SourceSet.TEST_SOURCE_SET_NAME );
+            testSourceSet.compileClasspath += configurations.antlr
+
+            project.afterEvaluate({
+                mainSourceSet.java.srcDir( genTask.outputDirectory )
+            })
+
+        }
+    }
+}
+
+class Antlr4GenerationTask extends DefaultTask {
+    static final String HQL_PCKG = 'org.hibernate.query.hql.internal'
+
+    List<GrammarDescriptor> grammarDescriptors = [
+            new GrammarDescriptor( HQL_PCKG, 'HqlLexer' ),
+            new GrammarDescriptor( HQL_PCKG, 'HqlParser' )
+    ]
+
+    @InputFiles
+    @SkipWhenEmpty
+    FileCollection getSource() {
+        // only used for UP-TO-DATE checking
+        return project.files( grammarDescriptors*.resolveSourceFile( project ) )
+    }
+
+    @OutputDirectory
+    File getOutputDirectory() {
+        // only used for UP-TO-DATE checking
+        return project.file( "${project.buildDir}/${project.baseAntlrOutputPath}" )
+    }
+
+    @TaskAction
+    void antlrGeneration() {
+        logger.lifecycle( "Starting custom Antlr (v4) grammar generation" )
+
+        grammarDescriptors.forEach( { grammarDescriptor -> generate( grammarDescriptor ) } )
+    }
+
+    def generate(GrammarDescriptor grammarDescriptor) {
+        final File sourceFile = grammarDescriptor.resolveSourceFile( project )
+        final File outputFile = grammarDescriptor.resolveOutputFile( project )
+
+        logger.lifecycle( "Starting Antlr grammar generation `${grammarDescriptor.grammarName} : [${sourceFile.absolutePath}] -> [${outputFile.absolutePath}]" )
+
+        outputFile.parentFile.mkdirs()
+
+        project.javaexec {
+            main 'org.antlr.v4.Tool'
+            classpath project.configurations.antlr
+            args '-o', outputFile.parentFile.absolutePath
+//            args '-lib', sourceFile.parentFile.absolutePath
+            args '-long-messages'
+            args '-listener'
+            args '-visitor'
+            args sourceFile.absolutePath
+        }
+    }
+}
