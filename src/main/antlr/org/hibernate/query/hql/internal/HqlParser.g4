@@ -69,8 +69,11 @@ jpaCollectionJoin
 	;
 
 qualifiedJoin
+// todo (6.0) : consider grouping `joinTypeQualifier JOIN FETCH? qualifiedJoinRhs` into a single sub-rule
+//		this would allow easier handling in the walker
 	: joinTypeQualifier JOIN FETCH? qualifiedJoinRhs (qualifiedJoinPredicate)?
 	;
+
 
 joinTypeQualifier
 	: INNER?

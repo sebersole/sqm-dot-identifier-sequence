@@ -15,7 +15,7 @@ import org.hibernate.query.SemanticException;
 import org.hibernate.query.hql.spi.DotIdentifierHandler;
 import org.hibernate.query.hql.spi.SqmCreationContext;
 import org.hibernate.query.hql.spi.StatementProcessingState;
-import org.hibernate.query.internal.QueryLogger;
+import org.hibernate.query.QueryLogger;
 import org.hibernate.query.sqm.tree.domain.SqmFrom;
 import org.hibernate.query.sqm.tree.domain.SqmPath;
 import org.hibernate.query.sqm.tree.domain.SqmPathImpl;

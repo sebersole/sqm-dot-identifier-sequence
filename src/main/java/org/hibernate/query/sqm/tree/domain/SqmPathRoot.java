@@ -9,7 +9,7 @@ package org.hibernate.query.sqm.tree.domain;
 import org.hibernate.model.AttributeContainer;
 import org.hibernate.model.EntityDescriptor;
 import org.hibernate.query.NavigablePath;
-import org.hibernate.query.internal.QueryLogger;
+import org.hibernate.query.QueryLogger;
 
 /**
  * @author Steve Ebersole

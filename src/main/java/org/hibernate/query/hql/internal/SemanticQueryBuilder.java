@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import org.hibernate.NotYetImplementedFor6Exception;
 import org.hibernate.internal.util.collections.Stack;
 import org.hibernate.internal.util.collections.StandardStack;
 import org.hibernate.model.EntityDescriptor;
@@ -24,7 +25,8 @@ import org.hibernate.query.hql.spi.FromElementRegistry;
 import org.hibernate.query.hql.spi.PathRootLocator;
 import org.hibernate.query.hql.spi.SqmCreationContext;
 import org.hibernate.query.hql.spi.StatementProcessingState;
-import org.hibernate.query.internal.QueryLogger;
+import org.hibernate.query.QueryLogger;
+import org.hibernate.query.spi.ComparisonOperator;
 import org.hibernate.query.sqm.tree.SqmJoinType;
 import org.hibernate.query.sqm.tree.SqmSelectStatement;
 import org.hibernate.query.sqm.tree.domain.SqmFrom;
@@ -35,6 +37,9 @@ import org.hibernate.query.sqm.tree.domain.SqmPathJoin;
 import org.hibernate.query.sqm.tree.domain.SqmPathRoot;
 import org.hibernate.query.sqm.tree.domain.SqmQualifiedPathJoin;
 import org.hibernate.query.sqm.tree.expression.SqmExpression;
+import org.hibernate.query.sqm.tree.expression.SqmLiteral;
+import org.hibernate.query.sqm.tree.predicate.SqmComparisonPredicate;
+import org.hibernate.query.sqm.tree.predicate.SqmPredicate;
 import org.hibernate.query.sqm.tree.select.SqmQuerySpec;
 import org.hibernate.query.sqm.tree.select.SqmSelectClause;
 import org.hibernate.query.sqm.tree.select.SqmSelectableNode;
@@ -186,10 +191,27 @@ public class SemanticQueryBuilder extends HqlParserBaseVisitor {
 		}
 
 
+		final SqmQualifiedPathJoin join = consumeQualifiedJoinRhs(
+				ctx.qualifiedJoinRhs(),
+				joinType,
+				ctx.FETCH() != null
+		);
+
+		if ( ctx.qualifiedJoinPredicate() != null ) {
+			join.setJoinPredicate( visitQualifiedJoinPredicate( ctx.qualifiedJoinPredicate() ) );
+		}
+
+		return join;
+	}
+
+	private SqmQualifiedPathJoin consumeQualifiedJoinRhs(
+			HqlParser.QualifiedJoinRhsContext qualifiedJoinRhs,
+			SqmJoinType joinType,
+			boolean fetched) {
 		final QualifiedJoinPathIdentifierConsumer identifierConsumer = new QualifiedJoinPathIdentifierConsumer(
 				joinType,
-				ctx.FETCH() != null,
-				visitIdentificationVariableDef( ctx.qualifiedJoinRhs().identificationVariableDef() ),
+				fetched,
+				visitIdentificationVariableDef( qualifiedJoinRhs.identificationVariableDef() ),
 				statementProcessingStateStack.getCurrent(),
 				sqmCreationContext
 		);
@@ -197,14 +219,8 @@ public class SemanticQueryBuilder extends HqlParserBaseVisitor {
 		identifierConsumerStack.push( identifierConsumer );
 
 		try {
-			ctx.qualifiedJoinRhs().path().accept( this );
-			final SqmQualifiedPathJoin join = (SqmQualifiedPathJoin) identifierConsumer.getConsumedPart();
-
-			if ( ctx.qualifiedJoinPredicate() != null ) {
-				// todo (6.0) : implement this
-			}
-
-			return join;
+			qualifiedJoinRhs.path().accept( this );
+			return (SqmQualifiedPathJoin) identifierConsumer.getConsumedPart();
 		}
 		finally {
 			identifierConsumerStack.pop();
@@ -212,8 +228,18 @@ public class SemanticQueryBuilder extends HqlParserBaseVisitor {
 	}
 
 	@Override
+	public SqmPredicate visitQualifiedJoinPredicate(HqlParser.QualifiedJoinPredicateContext ctx) {
+		return (SqmPredicate) ctx.predicate().accept( this );
+	}
+
+	@Override
+	public Object visitQualifiedJoinRhs(HqlParser.QualifiedJoinRhsContext ctx) {
+		throw new IllegalStateException( "Unexpected call to #visitQualifiedJoinRhs" );
+	}
+
+	@Override
 	public SqmPathJoin visitJpaCollectionJoin(HqlParser.JpaCollectionJoinContext ctx) {
-		throw new IllegalStateException( "Not yet implemented" );
+		throw new NotYetImplementedFor6Exception( "Not yet implemented" );
 	}
 
 
@@ -291,6 +317,21 @@ public class SemanticQueryBuilder extends HqlParserBaseVisitor {
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// Expressions
 
+
+	@Override
+	public SqmLiteral visitLiteralExpression(HqlParser.LiteralExpressionContext ctx) {
+		if ( ctx.literal().STRING_LITERAL() != null ) {
+			return new SqmLiteral( ctx.literal().STRING_LITERAL().getText() );
+		}
+
+		throw new NotYetImplementedFor6Exception();
+	}
+
+	@Override
+	public Object visitLiteral(HqlParser.LiteralContext ctx) {
+		return super.visitLiteral( ctx );
+	}
+
 	@Override
 	public SqmExpression visitPathExpression(HqlParser.PathExpressionContext ctx) {
 		super.visitPathExpression( ctx );
@@ -331,6 +372,28 @@ public class SemanticQueryBuilder extends HqlParserBaseVisitor {
 	public Object visitDotIdentifierSequenceContinuation(HqlParser.DotIdentifierSequenceContinuationContext ctx) {
 		return super.visitDotIdentifierSequenceContinuation( ctx );
 	}
+
+
+
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// Predicates
+
+
+	@Override
+	public SqmPredicate visitEqualityPredicate(HqlParser.EqualityPredicateContext ctx) {
+		return new SqmComparisonPredicate(
+				(SqmExpression) ctx.expression( 0 ).accept( this ),
+				ComparisonOperator.EQUAL,
+				(SqmExpression) ctx.expression( 1 ).accept( this )
+		);
+	}
+
+
+
+
+
+
+
 
 	private class QuerySpecProcessingStateImpl implements StatementProcessingState, PathRootLocator, FromElementRegistry {
 		// todo (6.0) : ultimately `parent` here needs to be able to handle DML statements as well

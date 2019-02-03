@@ -13,12 +13,16 @@ import org.hibernate.query.SemanticException;
 import org.hibernate.query.hql.internal.HqlParseTreeBuilder;
 import org.hibernate.query.hql.internal.HqlParser;
 import org.hibernate.query.hql.internal.SemanticQueryBuilder;
+import org.hibernate.query.spi.ComparisonOperator;
 import org.hibernate.query.sqm.tree.SqmSelectStatement;
 import org.hibernate.query.sqm.tree.domain.SqmFromClause;
 import org.hibernate.query.sqm.tree.domain.SqmFromClauseSpace;
 import org.hibernate.query.sqm.tree.domain.SqmPath;
 import org.hibernate.query.sqm.tree.domain.SqmPathJoin;
 import org.hibernate.query.sqm.tree.domain.SqmPathRoot;
+import org.hibernate.query.sqm.tree.expression.SqmLiteral;
+import org.hibernate.query.sqm.tree.predicate.SqmComparisonPredicate;
+import org.hibernate.query.sqm.tree.predicate.SqmPredicate;
 import org.hibernate.query.sqm.tree.select.SqmSelectClause;
 import org.hibernate.query.sqm.tree.select.SqmSelection;
 
@@ -97,6 +101,44 @@ public class TheTest {
 		final SqmPathJoin join = space.getJoins().get( 0 );
 		assertThat( join.getReferencedNavigable().getNavigableName(), is( "name" ) );
 		assertThat( join.getExplicitAlias(), is( "n" ) );
+
+
+		final SqmPredicate joinPredicate = join.getJoinPredicate();
+		assertThat( joinPredicate, nullValue() );
+	}
+
+	@Test
+	public void restrictedAttributeJoinTest() {
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from MyEntity as e join e.name n on n.last = 'Smith'" );
+
+		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
+
+		final SqmFromClause fromClause = statement.getQuerySpec().getFromClause();
+
+		assertThat( fromClause.getSpaces().size(), is( 1 ) );
+
+		final SqmFromClauseSpace space = fromClause.getSpaces().get( 0 );
+
+		assertThat( space.getRoot(), notNullValue() );
+		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "MyEntity" ) );
+		assertThat( space.getRoot().getExplicitAlias(), is( "e" ) );
+
+		assertThat( space.getJoins().size(), is( 1 ) );
+
+		final SqmPathJoin join = space.getJoins().get( 0 );
+		assertThat( join.getReferencedNavigable().getNavigableName(), is( "name" ) );
+		assertThat( join.getExplicitAlias(), is( "n" ) );
+
+		assertThat( join.getJoinPredicate(), notNullValue() );
+		final SqmComparisonPredicate joinPredicate = (SqmComparisonPredicate) join.getJoinPredicate();
+
+		assertThat( joinPredicate.getOperator(), is( ComparisonOperator.EQUAL ) );
+
+		assertThat( joinPredicate.getLeftHandExpression(), instanceOf( SqmPath.class ) );
+
+		assertThat( joinPredicate.getRightHandExpression(), instanceOf( SqmLiteral.class ) );
+		assertThat( ( (SqmLiteral) joinPredicate.getRightHandExpression() ).getLiteralValue(), is( "Smith" ) );
 	}
 
 	@Test
