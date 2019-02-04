@@ -6,26 +6,29 @@
  */
 package org.hibernate.query.hql;
 
-import org.hibernate.model.AttributeDescriptor;
-import org.hibernate.model.EntityDescriptor;
-import org.hibernate.model.Model;
 import org.hibernate.query.SemanticException;
-import org.hibernate.query.hql.internal.HqlParseTreeBuilder;
-import org.hibernate.query.hql.internal.HqlParser;
-import org.hibernate.query.hql.internal.SemanticQueryBuilder;
+import org.hibernate.query.seqpoc.hql.internal.HqlParseTreeBuilder;
+import org.hibernate.query.seqpoc.hql.internal.HqlParser;
+import org.hibernate.query.seqpoc.hql.internal.SemanticQueryBuilder;
+import org.hibernate.query.seqpoc.sqm.tree.SqmSelectStatement;
+import org.hibernate.query.seqpoc.sqm.tree.domain.SqmFromClause;
+import org.hibernate.query.seqpoc.sqm.tree.domain.SqmFromClauseSpace;
+import org.hibernate.query.seqpoc.sqm.tree.domain.SqmPath;
+import org.hibernate.query.seqpoc.sqm.tree.domain.SqmPathJoin;
+import org.hibernate.query.seqpoc.sqm.tree.domain.SqmPathRoot;
+import org.hibernate.query.seqpoc.sqm.tree.domain.SqmPathEntityJoin;
+import org.hibernate.query.seqpoc.sqm.tree.expression.SqmLiteral;
+import org.hibernate.query.seqpoc.sqm.tree.predicate.SqmComparisonPredicate;
+import org.hibernate.query.seqpoc.sqm.tree.predicate.SqmPredicate;
+import org.hibernate.query.seqpoc.sqm.tree.select.SqmSelectClause;
+import org.hibernate.query.seqpoc.sqm.tree.select.SqmSelection;
 import org.hibernate.query.spi.ComparisonOperator;
-import org.hibernate.query.sqm.tree.SqmSelectStatement;
-import org.hibernate.query.sqm.tree.domain.SqmFromClause;
-import org.hibernate.query.sqm.tree.domain.SqmFromClauseSpace;
-import org.hibernate.query.sqm.tree.domain.SqmPath;
-import org.hibernate.query.sqm.tree.domain.SqmPathJoin;
-import org.hibernate.query.sqm.tree.domain.SqmPathRoot;
-import org.hibernate.query.sqm.tree.expression.SqmLiteral;
-import org.hibernate.query.sqm.tree.predicate.SqmComparisonPredicate;
-import org.hibernate.query.sqm.tree.predicate.SqmPredicate;
-import org.hibernate.query.sqm.tree.select.SqmSelectClause;
-import org.hibernate.query.sqm.tree.select.SqmSelection;
 
+import org.hibernate.testing.orm.domain.StandardDomainModel;
+import org.hibernate.testing.orm.junit.DomainModel;
+import org.hibernate.testing.orm.junit.SessionFactory;
+import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.SessionFactoryScopeAware;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
@@ -40,14 +43,17 @@ import static org.junit.jupiter.api.Assertions.fail;
  * @author Steve Ebersole
  */
 @SuppressWarnings("WeakerAccess")
-public class TheTest {
-	private final Model model = createModel();
+
+@DomainModel( standardModels = StandardDomainModel.RETAIL )
+@SessionFactory
+public class TheTest implements SessionFactoryScopeAware {
+	private SessionFactoryScope sessionFactoryScope;
 
 	@Test
 	public void basicTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from MyEntity as e" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from Order as o" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
 
 		final SqmFromClause fromClause = statement.getQuerySpec().getFromClause();
@@ -57,17 +63,17 @@ public class TheTest {
 		final SqmFromClauseSpace space = fromClause.getSpaces().get( 0 );
 
 		assertThat( space.getRoot(), notNullValue() );
-		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "MyEntity" ) );
-		assertThat( space.getRoot().getExplicitAlias(), is( "e" ) );
+		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "org.hibernate.testing.orm.domain.retail.Order" ) );
+		assertThat( space.getRoot().getExplicitAlias(), is( "o" ) );
 
 		assertTrue( space.getJoins().isEmpty() );
 	}
 
 	@Test
 	public void noAttributeTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from MyEntity as e join e.doesNotExist" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from Order as e join e.doesNotExist" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 
 		try {
 			builder.visitSelectStatement( hqlParser.selectStatement() );
@@ -81,9 +87,9 @@ public class TheTest {
 
 	@Test
 	public void attributeJoinTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from MyEntity as e join e.name n" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from Order as e join e.salesAssociate n" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
 
 		final SqmFromClause fromClause = statement.getQuerySpec().getFromClause();
@@ -93,13 +99,13 @@ public class TheTest {
 		final SqmFromClauseSpace space = fromClause.getSpaces().get( 0 );
 
 		assertThat( space.getRoot(), notNullValue() );
-		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "MyEntity" ) );
+		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "org.hibernate.testing.orm.domain.retail.Order" ) );
 		assertThat( space.getRoot().getExplicitAlias(), is( "e" ) );
 
 		assertThat( space.getJoins().size(), is( 1 ) );
 
 		final SqmPathJoin join = space.getJoins().get( 0 );
-		assertThat( join.getReferencedNavigable().getNavigableName(), is( "name" ) );
+		assertThat( join.getReferencedNavigable().getNavigableName(), is( "salesAssociate" ) );
 		assertThat( join.getExplicitAlias(), is( "n" ) );
 
 
@@ -109,9 +115,9 @@ public class TheTest {
 
 	@Test
 	public void restrictedAttributeJoinTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from MyEntity as e join e.name n on n.last = 'Smith'" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from Order as e join e.salesAssociate n on n.name.familyName = 'Smith'" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
 
 		final SqmFromClause fromClause = statement.getQuerySpec().getFromClause();
@@ -121,13 +127,13 @@ public class TheTest {
 		final SqmFromClauseSpace space = fromClause.getSpaces().get( 0 );
 
 		assertThat( space.getRoot(), notNullValue() );
-		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "MyEntity" ) );
+		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "org.hibernate.testing.orm.domain.retail.Order" ) );
 		assertThat( space.getRoot().getExplicitAlias(), is( "e" ) );
 
 		assertThat( space.getJoins().size(), is( 1 ) );
 
 		final SqmPathJoin join = space.getJoins().get( 0 );
-		assertThat( join.getReferencedNavigable().getNavigableName(), is( "name" ) );
+		assertThat( join.getReferencedNavigable().getNavigableName(), is( "salesAssociate" ) );
 		assertThat( join.getExplicitAlias(), is( "n" ) );
 
 		assertThat( join.getJoinPredicate(), notNullValue() );
@@ -136,6 +142,7 @@ public class TheTest {
 		assertThat( joinPredicate.getOperator(), is( ComparisonOperator.EQUAL ) );
 
 		assertThat( joinPredicate.getLeftHandExpression(), instanceOf( SqmPath.class ) );
+		assertThat( ( (SqmPath) joinPredicate.getLeftHandExpression() ).getReferencedNavigable().getNavigableName(), is ( "familyName" ) );
 
 		assertThat( joinPredicate.getRightHandExpression(), instanceOf( SqmLiteral.class ) );
 		assertThat( ( (SqmLiteral) joinPredicate.getRightHandExpression() ).getLiteralValue(), is( "Smith" ) );
@@ -143,9 +150,9 @@ public class TheTest {
 
 	@Test
 	public void entityJoinTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from MyEntity as e join MyEntity as e2" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "from Order as e join Vendor as v" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
 
 		final SqmFromClause fromClause = statement.getQuerySpec().getFromClause();
@@ -155,21 +162,22 @@ public class TheTest {
 		final SqmFromClauseSpace space = fromClause.getSpaces().get( 0 );
 
 		assertThat( space.getRoot(), notNullValue() );
-		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "MyEntity" ) );
+		assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "org.hibernate.testing.orm.domain.retail.Order" ) );
 		assertThat( space.getRoot().getExplicitAlias(), is( "e" ) );
 
 		assertThat( space.getJoins().size(), is( 1 ) );
 
 		final SqmPathJoin join = space.getJoins().get( 0 );
-		assertThat( join.getReferencedNavigable().getNavigableName(), is( "MyEntity" ) );
-		assertThat( join.getExplicitAlias(), is( "e2" ) );
+		assertThat( join, instanceOf( SqmPathEntityJoin.class ) );
+		assertThat( ( (SqmPathEntityJoin) join ).getJoinedEntityDescriptor().getEntityName(), is( "org.hibernate.testing.orm.domain.retail.Vendor" ) );
+		assertThat( join.getExplicitAlias(), is( "v" ) );
 	}
 
 	@Test
 	public void multiSpaceTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "select e from MyEntity as e, MyEntity as e2" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "select e from Order as e, Order as e2" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
 
 		final SqmFromClause fromClause = statement.getQuerySpec().getFromClause();
@@ -180,7 +188,7 @@ public class TheTest {
 			final SqmFromClauseSpace space = fromClause.getSpaces().get( 0 );
 
 			assertThat( space.getRoot(), notNullValue() );
-			assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "MyEntity" ) );
+			assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "org.hibernate.testing.orm.domain.retail.Order" ) );
 			assertThat( space.getRoot().getExplicitAlias(), is( "e" ) );
 
 			assertThat( space.getJoins().size(), is( 0 ) );
@@ -190,7 +198,7 @@ public class TheTest {
 			final SqmFromClauseSpace space = fromClause.getSpaces().get( 1 );
 
 			assertThat( space.getRoot(), notNullValue() );
-			assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "MyEntity" ) );
+			assertThat( space.getRoot().getEntityDescriptor().getEntityName(), is( "org.hibernate.testing.orm.domain.retail.Order" ) );
 			assertThat( space.getRoot().getExplicitAlias(), is( "e2" ) );
 
 			assertThat( space.getJoins().size(), is( 0 ) );
@@ -199,9 +207,9 @@ public class TheTest {
 
 	@Test
 	public void rootSelectionTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "select e from MyEntity as e" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "select e from Order as e" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
 
 		final SqmSelectClause selectClause = statement.getQuerySpec().getSelectClause();
@@ -215,9 +223,9 @@ public class TheTest {
 
 	@Test
 	public void attributeSelectionTest() {
-		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "select e.name from MyEntity as e" );
+		final HqlParser hqlParser = HqlParseTreeBuilder.INSTANCE.parseHql( "select e.salesAssociate from Order as e" );
 
-		final SemanticQueryBuilder builder = new SemanticQueryBuilder( () -> model );
+		final SemanticQueryBuilder builder = createSemanticQueryBuilder();
 		final SqmSelectStatement statement = builder.visitSelectStatement( hqlParser.selectStatement() );
 
 		final SqmSelectClause selectClause = statement.getQuerySpec().getSelectClause();
@@ -229,27 +237,12 @@ public class TheTest {
 		assertThat( selection.getAlias(), nullValue() );
 	}
 
+	private SemanticQueryBuilder createSemanticQueryBuilder() {
+		return new SemanticQueryBuilder( sessionFactoryScope.getSessionFactory().getMetamodel() );
+	}
 
-
-	private Model createModel() {
-		final EntityDescriptor myEntityDescriptor = new EntityDescriptor(
-				"MyEntity",
-				e -> new AttributeDescriptor( e, "id" ),
-				e -> new AttributeDescriptor( e, "anInt" ),
-				e -> new AttributeDescriptor(
-						e,
-						"name",
-						n -> new AttributeDescriptor( n, "first" ),
-						n -> new AttributeDescriptor( n, "last" )
-				)
-		);
-
-		return name -> {
-			if ( "MyEntity".equals( name ) ) {
-				return myEntityDescriptor;
-			}
-
-			return null;
-		};
+	@Override
+	public void injectSessionFactoryScope(SessionFactoryScope scope) {
+		sessionFactoryScope = scope;
 	}
 }

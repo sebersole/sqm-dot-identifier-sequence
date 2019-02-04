@@ -11,18 +11,27 @@ sourceCompatibility = 1.8
 
 repositories {
     mavenCentral()
+    maven {
+        name 'jboss-snapshots'
+        url 'http://repository.jboss.org/nexus/content/repositories/snapshots/'
+    }
 }
 
 dependencies {
     antlr 'org.antlr:antlr4:4.7.1'
 
-    compile 'org.antlr:antlr4:4.7.1'
-    compile 'org.jboss.logging:jboss-logging:3.3.2.Final'
+    compile 'org.hibernate.orm:hibernate-core:6.0.0-SNAPSHOT'
+
+//    compile 'org.antlr:antlr4:4.7.1'
+//    compile 'org.jboss.logging:jboss-logging:3.3.2.Final'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.0-RC2'
+
     testCompile 'org.hamcrest:hamcrest-core:1.3'
+    testCompile 'org.hibernate.orm:hibernate-testing:6.0.0-SNAPSHOT'
 
     testRuntime 'log4j:log4j:1.2.17'
+    testRuntime 'com.h2database:h2:1.4.196'
 }
 
 ext {
@@ -90,7 +99,7 @@ class Antlr4Plugin implements Plugin<Project> {
 }
 
 class Antlr4GenerationTask extends DefaultTask {
-    static final String HQL_PCKG = 'org.hibernate.query.hql.internal'
+    static final String HQL_PCKG = 'org.hibernate.query.seqpoc.hql.internal'
 
     List<GrammarDescriptor> grammarDescriptors = [
             new GrammarDescriptor( HQL_PCKG, 'HqlLexer' ),
